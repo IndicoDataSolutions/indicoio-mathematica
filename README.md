@@ -6,14 +6,14 @@
 
 ## Details
 ```Mathematica
-indico["name", data]
-	Classifies text or images using API "name".
-indico["name", data, "Probabilities"]
-	Probabilities of classification using API "name".
-```
+indico["name", data]```
+	Classifies text or images using API `"name"`.
+```Mathematica
+indico["name", data, "Probabilities"]```
+	Probabilities of classification using API `"name"`.
 
-Evaluate indico[] to see a list of all possible values for "name".
-Possible values of "name" include:
+Evaluate `indico[]` to see a list of all possible values for "name".
+Possible values of `"name"` include:
 	"Sentiment" - classifies sentiment of text,
 	"Political" - classifies political leaning of text,
 	"TextTags" - classifies topics discussed in text,
