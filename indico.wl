@@ -149,47 +149,6 @@ Begin["`Private`"];
 
 
 (* ::Subsection::Closed:: *)
-(*languageLookupTable*)
-
-
-languageLookupTable = {
-	"Tagalog" -> Entity["Language","Tagalog"],
-	"Portuguese" -> Entity["Language","Portuguese"],
-	"Esperanto" -> Entity["Language","Esperanto"],
-	"Thai" -> Entity["Language","Thai"],
-	"Swedish" -> Entity["Language","Swedish"],
-	"Lithuanian" -> Entity["Language","Lithuanian"],
-	"French" -> Entity["Language","French"],
-	"Russian" -> Entity["Language","Russian"],
-	"Czech" -> Entity["Language","Czech"],
-	"Norwegian" -> Entity["Language","Norwegian"],
-	"Bulgarian" -> Entity["Language","Bulgarian"],
-	"German" -> Entity["Language","German"],
-	"Slovak" -> Entity["Language","Slovak"],
-	"Arabic" -> Entity["Language","Arabic"],
-	"Chinese" -> Entity["Language","ChineseMandarin"],
-	"Romanian" -> Entity["Language","Romanian"],
-	"Dutch" -> Entity["Language","Dutch"],
-	"English" -> Entity["Language","English"],
-	"Polish" -> Entity["Language","Polish"],
-	"Korean" -> Entity["Language","Korean"],
-	"Finnish" -> Entity["Language","Finnish"],
-	"Indonesian" -> Entity["Language","Indonesian"],
-	"Danish" -> Entity["Language","Danish"],
-	"Japanese" -> Entity["Language","Japanese"],
-	"Turkish" -> Entity["Language","Turkish"],
-	"Hebrew" -> Entity["Language","Hebrew"],
-	"Hungarian" -> Entity["Language","Hungarian"],
-	"Vietnamese" -> Entity["Language","Vietnamese"],
-	"Italian" -> Entity["Language","Italian"],
-	"Persian (Farsi)" -> Entity["Language","FarsiEastern"],
-	"Greek" -> Entity["Language","Greek"],
-	"Spanish" -> Entity["Language","Spanish"],
-	"Latin" -> Entity["Language","Latin"]
-}
-
-
-(* ::Subsection::Closed:: *)
 (*validKeyQ*)
 
 
@@ -216,11 +175,25 @@ Module[
 (*sendToIndico*)
 
 
-sendToIndico[api_, data_] := 
-URLFetch[
-	api, 
-	"Body" -> ExportString[{"data" -> data}, "JSON", "Compact" -> True], 
-	"Method" -> "POST"
+optsReplacements = {
+	"TopN" -> "top_n"
+};
+
+
+sendToIndico[api_, data_, opts: OptionsPattern[]] := 
+Module[
+	{body, results},
+	body = If[
+		opts === Null,
+		{"data" -> data},
+		Flatten @ Append[{"data" -> data}, opts /. optsReplacements]
+	];
+	results = URLFetch[
+		api, 
+		"Body" -> ExportString[body, "JSON", "Compact" -> True], 
+		"Method" -> "POST"
+	];
+	ImportString[results, "JSON"]
 ]
 
 
@@ -242,32 +215,73 @@ If[
 (*formatResult*)
 
 
-(* ::Subsubsection:: *)
-(*value*)
+(* ::Subsubsection::Closed:: *)
+(*rawOutput*)
 
 
 (* ::Text:: *)
-(*This is for base results of the form "value"*)
+(*This does no formatting*)
 
 
-formatResult["Sentiment" | "SentimentHQ", results: List[_Rule], output_] :=
+rawFormat = Alternatives[
+	(*"ContentFiltering"*)
+];
+
+
+formatResult[apiName: rawFormat, results_, output_] :=
 Module[
-	{finalResult, preResult},
+	{preResult},
 	If[
 		results[[1,1]] === "results",
+		preResult = results[[1, 2]],
+		Message[indico::apiErrorMessage, results[[1,2]]]
+	]
+]
+
+
+(* ::Subsubsection::Closed:: *)
+(*valueFormat*)
+
+
+(* ::Text:: *)
+(*This is for base results of the form *)
+(*"value"*)
+
+
+valueFormat = Alternatives[
+	"Sentiment",
+	"SentimentHQ",
+	"Engagement",
+	"ContentFiltering"
+];
+
+
+formatResult[apiName: valueFormat, results: List[_Rule], output_] :=
+Module[
+	{name1, name2, finalResult, preResult},
+	If[
+		results[[1,1]] === "results",
+		{name1, name2} = Which[
+			MatchQ[apiName, "Sentiment" | "SentimentHQ"],
+			{"Positive", "Negative"},
+			MatchQ[apiName, "Engagement"],
+			{"Engaging", "NotEngaging"},
+			MatchQ[apiName, "ContentFiltering"],
+			{"NotSafeForWork", "SafeForWork"}
+		];
 		Which[
 			batchQ && output === "Probabilities",
 			preResult = results[[1, 2]];
-			<|"Positive" -> #, "Negative" -> 1 - #|> & /@ preResult,
+			<|name1 -> #, name2 -> 1 - #|> & /@ preResult,
 			!batchQ && output === "Probabilities",
 			preResult = results[[1, 2]];
-			<|"Positive" -> preResult, "Negative" -> 1 - preResult|>,
+			<|name1 -> preResult, name2 -> 1 - preResult|>,
 			batchQ,
 			preResult = results[[1, 2]];
-			If[TrueQ[# > .5], "Positive", "Negative"]& /@ preResult,
+			If[TrueQ[# > .5], name1, name2]& /@ preResult,
 			True,
 			preResult = results[[1, 2]];
-			If[TrueQ[preResult > .5], "Positive", "Negative"]
+			If[TrueQ[preResult > .5], name1, name2]
 		],
 		Message[indico::apiErrorMessage, results[[1,2]]]
 	]
@@ -275,67 +289,42 @@ Module[
 
 
 (* ::Subsubsection::Closed:: *)
-(*{key -> value, key -> value}*)
-(*with Entity lookup*)
+(*dictionaryFormat*)
 
 
 (* ::Text:: *)
-(*This is for base results of the form { "key" -> value } and includes the normalization to Entity["Language"]*)
+(*This is for base results of the form *)
+(*{ key -> value, key -> value }*)
 
 
-formatResult["Language", results: List[_Rule], output_] :=
+dictionaryFormat = Alternatives[
+	"Language",
+	"Political",
+	"TextTags",
+	"Keywords",
+	"FacialEmotionRecognition"
+];
+
+
+formatResult[apiName: dictionaryFormat, results: List[_Rule], output_] :=
 Module[
 	{finalResult, preResult},
 	If[
 		results[[1,1]] === "results",
 		Which[
 			batchQ && output === "Probabilities",
-			preResult = Association @@@ results[[1, 2]];
-			Map[KeyMap[ReplaceAll[#, languageLookupTable]&, #]&, preResult],
-			!batchQ && output === "Probabilities",
-			preResult = Association @@ results[[1, 2]];
-			KeyMap[ReplaceAll[#, languageLookupTable]&, preResult],
-			batchQ,
-			preResult = Association @@@ results[[1, 2]];
-			preResult = Map[First @ Keys @ Reverse @ Sort @ # &, preResult];
-			preResult /. languageLookupTable,
-			True,
-			preResult = Association @@ results[[1, 2]];
-			preResult = First @ Keys @ Reverse @ Sort @ preResult;
-			preResult /. languageLookupTable
-		],
-		Message[indico::apiErrorMessage, results[[1,2]]]
-	]
-]
-
-
-(* ::Subsubsection::Closed:: *)
-(*{key -> value, key -> value}*)
-
-
-(* ::Text:: *)
-(*This is for base results of the form { "key" -> value }*)
-
-
-formatResult["Political" | "TextTags" | "FacialEmotionRecognition", results: List[_Rule], output_] :=
-Module[
-	{finalResult, preResult},
-	If[
-		results[[1,1]] === "results",
-		Which[
-			batchQ && output === "Probabilities",
-			preResult = Association @@@ results[[1, 2]];
+			preResult = Sort[Association @@ #, Greater]& /@ results[[1, 2]];
 			preResult,
 			!batchQ && output === "Probabilities",
-			preResult = Association @@ results[[1, 2]];
+			preResult = Sort[Association @@ results[[1, 2]], Greater];
 			preResult,
 			batchQ,
 			preResult = Association @@@ results[[1, 2]];
-			preResult = Map[First @ Keys @ Reverse @ Sort @ # &, preResult];
+			preResult = Map[First @ Keys @ Sort[#, Greater] &, preResult];
 			preResult,
 			True,
 			preResult = Association @@ results[[1, 2]];
-			preResult = First @ Keys @ Reverse @ Sort @ preResult;
+			preResult = First @ Keys @ Sort[preResult, Greater];
 			preResult
 		],
 		Message[indico::apiErrorMessage, results[[1,2]]]
@@ -344,14 +333,60 @@ Module[
 
 
 (* ::Subsubsection::Closed:: *)
-(*{value, value}*)
+(*nestedDictionaryFormat *)
+(*!!! needs some handling for "Probabilities" !!!*)
+
+
+(* ::Text:: *)
+(*This is for base results of the form *)
+(*{key -> {k->v, k->v}, key -> {k->v, k->v}}*)
+
+
+nestedDictionaryFormat = Alternatives[
+	"NamedEntities"
+];
+
+
+formatResult[apiName: nestedDictionaryFormat, results: List[_Rule], output_] :=
+Module[
+	{finalResult, preResult},
+	If[
+		results[[1,1]] === "results",
+		preResult = results[[1, 2]];
+		Which[
+			batchQ && output === "Probabilities",
+			(*preResult = Association @@@ results[[1, 2]];*)
+			preResult,
+			!batchQ && output === "Probabilities",
+			(*preResult = Association @@ results[[1, 2]];*)
+			preResult,
+			batchQ,
+			preResult = Keys[Association @@ #]& /@ results[[1, 2]];
+			preResult,
+			True,
+			preResult = Keys[Association @@ results[[1, 2]]];
+			preResult
+		],
+		Message[indico::apiErrorMessage, results[[1, 2]]]
+	]
+]
+
+
+(* ::Subsubsection::Closed:: *)
+(*listFormat*)
 
 
 (* ::Text:: *)
 (*This is for base results of the form {value1, value2}*)
 
 
-formatResult["ImageFeatures", results: List[_Rule], "TopResult"] :=
+listFormat = Alternatives[
+	"ImageFeatures",
+	"FacialFeatures"
+];
+
+
+formatResult[apiName: listFormat, results: List[_Rule], output_] :=
 Module[
 	{finalResult, preResult},
 	If[
@@ -374,29 +409,62 @@ Module[
 
 
 (* ::Subsection::Closed:: *)
-(*Default Options*)
+(*Available APIs*)
 
 
-Options[indico] = {"apiKey" :> apiKey};
-
-
-indico[] := {
+textAPIs = {
 	"Sentiment",
+	"SentimentHQ",
 	"Language",
 	"Political",
 	"TextTags",
+	"Keywords",
+	"NamedEntities",
+	"Engagement"
+};
+
+
+imageAPIs = {
 	"FacialEmotionRecognition",
-	"ImageFeatures"
+	"FacialFeatures",
+	"ImageFeatures",
+	"ContentFiltering"
 }
 
 
-(* ::Subsection::Closed:: *)
+indico[] := Flatten @ {
+	textAPIs,
+	imageAPIs
+}
+
+
+(* ::Subsection:: *)
 (*Text Analysis*)
 
 
-indico[apiName: "Language" | "Sentiment" | "SentimentHQ" | "TextTags" | "Political", input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", OptionsPattern[]] := 
+(* ::Subsubsection::Closed:: *)
+(*main function*)
+
+
+Options @ indico = {
+	"apiKey" :> apiKey,
+	"top_n" -> 3,
+	"TopN" -> 3,
+	"Threshold" -> .9
+};
+
+
+textAPIsAlternatives = Alternatives @@ textAPIs;
+
+
+indico[
+	apiName: textAPIsAlternatives, 
+	input: _String | List[__String], 
+	output: "Probabilities" | "TopResult" : "TopResult", 
+	opts: OptionsPattern[]
+] := 
 Module[
-	{apiURL, key, api, results},
+	{apiURL, key, api, data, results},
 	apiURL = 
 		"http://apiv2.indico.io/"
 		<>
@@ -406,62 +474,66 @@ Module[
 	key = OptionValue["apiKey"];
 	If[!validKeyQ[key], Return[]];
 	api = apiURL <> key;
-	results = sendToIndico[api, input];
-	results = ImportString[results, "JSON"];
+	data = input;
+	results = sendToIndico[api, data, opts];
 	formatResult[apiName, results, output]
 ]
 
 
-sentiment[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[]] := 
-indico[
-	"Sentiment", 
-	input, 
-	output,
-	opts
-]
+(* ::Subsubsection::Closed:: *)
+(*alternative function names*)
+
+
+sentiment[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts: OptionsPattern[]] := 
+indico["Sentiment", input, output, opts]
 
 
 sentimentHQ[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[]] := 
-indico[
-	"SentimentHQ", 
-	input, 
-	output,
-	opts
-]
+indico["SentimentHQ", input, output, opts]
 
 
 language[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
-indico[
-	"Language", 
-	input, 
-	output,
-	opts
-]
+indico["Language", input, output, opts]
 
 
 textTags[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[]] := 
-indico[
-	"TextTags", 
-	input, 
-	output,
-	opts
-]
+indico["TextTags", input, output, opts]
 
 
 political[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
-indico[
-	"Political", 
-	input, 
-	output,
-	opts
-]
+indico["Political", input, output, opts]
 
 
-(* ::Subsection::Closed:: *)
+keywords[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+indico["Keywords", input, output, opts]
+
+
+namedEntities[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+indico["NamedEntities", input, output, opts]
+
+
+engagement[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+indico["TwitterEngagement", input, output, opts]
+
+
+(* ::Subsection:: *)
 (*Image Analysis*)
 
 
-indico[apiName: "FacialEmotionRecognition" | "ImageFeatures", input: _Image | List[__Image], output: "Probabilities" | "TopResult" : "TopResult", OptionsPattern[]] := 
+(* ::Subsubsection::Closed:: *)
+(*main function*)
+(*!!! needs detect option for fer!!!*)
+
+
+imageAPIsAlternatives = Alternatives @@ imageAPIs;
+
+
+indico[
+	apiName: imageAPIsAlternatives, 
+	input: _Image | List[__Image], 
+	output: "Probabilities" | "TopResult" : "TopResult", 
+	opts: OptionsPattern[]
+] := 
 Module[
 	{apiURL, key, api, data, results},
 	apiURL = "http://apiv2.indico.io/"
@@ -483,28 +555,29 @@ Module[
 		DeleteFile[MapIndexed["temp"<> ToString @ First @ #2 <>".jpg.b64"&, input]];
 	];
 	ResetDirectory[];
-	results = sendToIndico[api, data];
-	results = ImportString[results, "JSON"];
+	results = sendToIndico[api, data, opts];
 	formatResult[apiName, results, output]
 ]
 
 
+(* ::Subsubsection::Closed:: *)
+(*alternate function names*)
+
+
 imageFeatures[input: _Image | List[__Image], opts:OptionsPattern[indico]] := 
-indico[
-	"ImageFeatures", 
-	input, 
-	"TopResult",
-	opts
-]
+indico["ImageFeatures", input, "TopResult", opts]
 
 
 fer[input: _Image | List[__Image], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
-indico[
-	"FacialEmotionRecognition", 
-	input, 
-	output,
-	opts
-]
+indico["FacialEmotionRecognition", input, output, opts]
+
+
+facialFeatures[input: _Image | List[__Image], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+indico["FacialEmotionRecognition", input, output, opts]
+
+
+contentFiltering[input: _Image | List[__Image], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+indico["FacialEmotionRecognition", input, output, opts]
 
 
 (* ::Section::Closed:: *)
