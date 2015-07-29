@@ -193,6 +193,9 @@ Module[
 		"Body" -> ExportString[body, "JSON", "Compact" -> True], 
 		"Method" -> "POST"
 	];
+Print@api;
+Print@body;
+Print@results;
 	ImportString[results, "JSON"]
 ]
 
@@ -224,7 +227,7 @@ If[
 
 
 rawFormat = Alternatives[
-	(*"ContentFiltering"*)
+	"Engagement"
 ];
 
 
@@ -251,7 +254,7 @@ Module[
 valueFormat = Alternatives[
 	"Sentiment",
 	"SentimentHQ",
-	"Engagement",
+	"TwitterEngagement",
 	"ContentFiltering"
 ];
 
@@ -264,7 +267,7 @@ Module[
 		{name1, name2} = Which[
 			MatchQ[apiName, "Sentiment" | "SentimentHQ"],
 			{"Positive", "Negative"},
-			MatchQ[apiName, "Engagement"],
+			MatchQ[apiName, "TwitterEngagement"],
 			{"Engaging", "NotEngaging"},
 			MatchQ[apiName, "ContentFiltering"],
 			{"NotSafeForWork", "SafeForWork"}
@@ -420,7 +423,8 @@ textAPIs = {
 	"TextTags",
 	"Keywords",
 	"NamedEntities",
-	"Engagement"
+	"TwitterEngagement",
+"Engagement"
 };
 
 
@@ -512,7 +516,7 @@ namedEntities[input: _String | List[__String], output: "Probabilities" | "TopRes
 indico["NamedEntities", input, output, opts]
 
 
-engagement[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
+twitterEngagement[input: _String | List[__String], output: "Probabilities" | "TopResult" : "TopResult", opts:OptionsPattern[indico]] := 
 indico["TwitterEngagement", input, output, opts]
 
 
