@@ -193,9 +193,6 @@ Module[
 		"Body" -> ExportString[body, "JSON", "Compact" -> True], 
 		"Method" -> "POST"
 	];
-Print@api;
-Print@body;
-Print@results;
 	ImportString[results, "JSON"]
 ]
 
@@ -227,7 +224,7 @@ If[
 
 
 rawFormat = Alternatives[
-	"Engagement"
+	(*"Engagement"*)
 ];
 
 
@@ -423,8 +420,7 @@ textAPIs = {
 	"TextTags",
 	"Keywords",
 	"NamedEntities",
-	"TwitterEngagement",
-"Engagement"
+	"TwitterEngagement"
 };
 
 
